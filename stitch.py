@@ -18,19 +18,35 @@ def binary_to_cv(binaryfile):
 if __name__ == '__main__':
     spark = SparkSession \
         .builder \
+        .config("spark.driver.memory", "15g") \
+        .config("spark.driver.maxResultSize", "4g") \
         .appName("PythonSimpleStitch") \
         .getOrCreate()
     sc = spark.sparkContext
-    left_images = sc.binaryFiles('example_img/left', minPartitions=sc.defaultMinPartitions)
-    left_images = left_images.map(lambda img: binary_to_cv(img))
-    right_images = sc.binaryFiles('example_img/right', minPartitions=sc.defaultMinPartitions)
-    right_images = right_images.map(lambda img: binary_to_cv(img))
-
-    pairs = left_images.zip(right_images)
-    processed = pairs.map(lambda p: stitch(p))
-    processed = processed.collect()
+    left_camera = cv2.VideoCapture('example_video/left/ny_left_short.mp4')
+    right_camera = cv2.VideoCapture('example_video/right/ny_right_short.mp4')
+    left_feed = []
+    right_feed = []
+    while(True):
+        ret, frame = left_camera.read()
+        if ret==True:
+            left_feed.append(frame)
+        else:
+            break
+    while (True):
+        ret, frame = right_camera.read()
+        if ret == True:
+            right_feed.append(frame)
+        else:
+            break
+    left_data = sc.parallelize(left_feed)
+    right_data = sc.parallelize(right_feed)
+    pairs = left_data.zip(right_data)
+    processed = pairs.map(lambda p: stitch(p)).collect()
     for (status, img) in processed:
         if status==0:
-            cv2.imshow('stitched image', img)
-            cv2.waitKey(0)
+            cv2.imshow('image', img)
+            cv2.waitKey(1)
+        else:
+            print("Error")
     exit(0)
