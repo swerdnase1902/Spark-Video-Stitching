@@ -6,10 +6,11 @@ import io
 import imutils
 
 
-def stitch(img_pair):
+def stitch(partitions):
     stitcher = cv2.createStitcher() if imutils.is_cv3() else cv2.Stitcher_create()
-    ret = (status, stitched) = stitcher.stitch([img_pair[0], img_pair[1]])
-    return ret
+    for element in partitions:
+        ret = (status, stitched) = stitcher.stitch([element[0], element[1]])
+        yield ret
 
 
 def binary_to_cv(binaryfile):
@@ -44,10 +45,10 @@ if __name__ == '__main__':
         .appName("PythonSimpleStitch") \
         .getOrCreate()
     sc = spark.sparkContext
-    imgs = img_gen('example_video/left/ny_left_short.mp4','example_video/right/ny_right_short.mp4')
+    imgs = img_gen('example_video/left/very_short_left.mp4','example_video/right/very_short_right.mp4')
 
     data = sc.parallelize(imgs)
-    processed = data.map(lambda p: stitch(p)).collect()
+    processed = data.mapPartitions(lambda p: stitch(p)).collect()
 
     # height, width, depth
     shape = (0, 0, 0)
