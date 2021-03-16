@@ -25,6 +25,16 @@ def zero_resize(a, shape):
     ret[0:a.shape[0], 0:a.shape[1], 0:a.shape[2]] = a
     return ret
 
+def img_gen(l_loc, r_loc):
+    left_camera = cv2.VideoCapture(l_loc)
+    right_camera = cv2.VideoCapture(r_loc)
+    while (True):
+        l_ret, l_frame = left_camera.read()
+        r_ret, r_frame = right_camera.read()
+        if l_ret and r_ret:
+            yield (l_frame, r_frame)
+        else:
+            break
 
 if __name__ == '__main__':
     spark = SparkSession \
@@ -34,23 +44,10 @@ if __name__ == '__main__':
         .appName("PythonSimpleStitch") \
         .getOrCreate()
     sc = spark.sparkContext
-    left_camera = cv2.VideoCapture('example_video/left/ny_left_short.mp4')
-    right_camera = cv2.VideoCapture('example_video/right/ny_right_short.mp4')
-    left_feed = []
-    right_feed = []
-    while (True):
-        l_ret, l_frame = left_camera.read()
-        r_ret, r_frame = right_camera.read()
-        if l_ret and r_ret:
-            left_feed.append(l_frame)
-            right_feed.append(r_frame)
-        else:
-            break
+    imgs = img_gen('example_video/left/ny_left_short.mp4','example_video/right/ny_right_short.mp4')
 
-    left_data = sc.parallelize(left_feed)
-    right_data = sc.parallelize(right_feed)
-    pairs = left_data.zip(right_data)
-    processed = pairs.map(lambda p: stitch(p)).collect()
+    data = sc.parallelize(imgs)
+    processed = data.map(lambda p: stitch(p)).collect()
 
     # height, width, depth
     shape = (0, 0, 0)
@@ -61,7 +58,7 @@ if __name__ == '__main__':
     writer = cv2.VideoWriter("out.avi", fourcc, 24.0, (shape[1], shape[0]))
     for (status, img) in processed:
         if status == 0:
-            # cv2.imshow("image", zero_resize(img, shape))
+            #cv2.imshow("image", zero_resize(img, shape))
             writer.write(zero_resize(img, shape))
             cv2.waitKey(1)
     writer.release()
