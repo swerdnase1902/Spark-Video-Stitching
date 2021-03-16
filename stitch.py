@@ -39,15 +39,11 @@ if __name__ == '__main__':
     left_feed = []
     right_feed = []
     while (True):
-        ret, frame = left_camera.read()
-        if ret == True:
-            left_feed.append(frame)
-        else:
-            break
-    while (True):
-        ret, frame = right_camera.read()
-        if ret == True:
-            right_feed.append(frame)
+        l_ret, l_frame = left_camera.read()
+        r_ret, r_frame = right_camera.read()
+        if l_ret and r_ret:
+            left_feed.append(l_frame)
+            right_feed.append(r_frame)
         else:
             break
 
