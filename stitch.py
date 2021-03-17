@@ -1,10 +1,14 @@
+import sys
+
+from pip._vendor.distlib.compat import raw_input
 from pyspark.sql import SparkSession
 import numpy as np
 from PIL import Image
 import cv2
 import io
 import imutils
-
+import math
+import time
 
 def stitch(partitions):
     stitcher = cv2.createStitcher() if imutils.is_cv3() else cv2.Stitcher_create()
@@ -26,9 +30,8 @@ def zero_resize(a, shape):
     ret[0:a.shape[0], 0:a.shape[1], 0:a.shape[2]] = a
     return ret
 
-def img_gen(l_loc, r_loc):
-    left_camera = cv2.VideoCapture(l_loc)
-    right_camera = cv2.VideoCapture(r_loc)
+
+def img_gen(left_camera, right_camera):
     while (True):
         l_ret, l_frame = left_camera.read()
         r_ret, r_frame = right_camera.read()
@@ -37,17 +40,34 @@ def img_gen(l_loc, r_loc):
         else:
             break
 
+
 if __name__ == '__main__':
+    #in bytes
+    start = time.perf_counter()
+    video_name = sys.argv[1]
+    video_len = sys.argv[2]
+    MESSAGE_SIZE = 250000000
     spark = SparkSession \
         .builder \
         .config("spark.driver.memory", "15g") \
-        .config("spark.driver.maxResultSize", "4g") \
+        .config("spark.driver.maxResultSize", "15g") \
         .appName("PythonSimpleStitch") \
         .getOrCreate()
     sc = spark.sparkContext
-    imgs = img_gen('example_video/left/very_short_left.mp4','example_video/right/very_short_right.mp4')
+    sc.setLogLevel("INFO")
+    left_camera = cv2.VideoCapture('example_video/left/{}_{}_l.mp4'.format(video_name, video_len))
+    right_camera = cv2.VideoCapture('example_video/right/{}_{}_r.mp4'.format(video_name, video_len))
+    FRAME_COUNT = max(left_camera.get(cv2.CAP_PROP_FRAME_COUNT),
+                      right_camera.get(cv2.CAP_PROP_FRAME_COUNT))
+    FRAME_WIDTH = max(left_camera.get(cv2.CAP_PROP_FRAME_WIDTH),
+                      right_camera.get(cv2.CAP_PROP_FRAME_WIDTH))
+    FRAME_HEIGHT = max(left_camera.get(cv2.CAP_PROP_FRAME_HEIGHT),
+                       right_camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    #the two is a magic number, idk why its needed to adjust the size correctly
+    numSlices = math.ceil((FRAME_COUNT * FRAME_WIDTH * FRAME_HEIGHT * 3 * 2) / MESSAGE_SIZE)
+    imgs = img_gen(left_camera, right_camera)
 
-    data = sc.parallelize(imgs)
+    data = sc.parallelize(imgs, numSlices=numSlices)
     processed = data.mapPartitions(lambda p: stitch(p)).collect()
 
     # height, width, depth
@@ -59,8 +79,8 @@ if __name__ == '__main__':
     writer = cv2.VideoWriter("out.avi", fourcc, 24.0, (shape[1], shape[0]))
     for (status, img) in processed:
         if status == 0:
-            #cv2.imshow("image", zero_resize(img, shape))
+            # cv2.imshow("image", zero_resize(img, shape))
             writer.write(zero_resize(img, shape))
-            cv2.waitKey(1)
+            #cv2.waitKey(1)
     writer.release()
-    exit(0)
+    print("{},{},{}".format(video_name, video_len, time.perf_counter() - start))
